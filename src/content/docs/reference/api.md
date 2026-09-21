@@ -1329,7 +1329,7 @@ Returns the pointer to the start of the data.
 This function cannot be used if the metatable was not associated with the tag.
 
 ```c
-void* lua_newuserdatadtor(lua_State* L, size_t sz, void (*dtor)(void*));
+void* lua_newuserdatadtor(lua_State* L, size_t sz, lua_Destructor dtor);
 ```
 
 Places a new `userdata` object with the data size `sz` on top of the stack.
@@ -1337,6 +1337,17 @@ A custom destructor C function is assigned to the value.
 Returns the pointer to the start of the data.
 
 Destructor C function cannot be a `nullptr`.
+
+```c
+typedef void (*lua_Destructor)(lua_State* L, void* userdata);
+```
+
+The signature of the destructor callback.
+
+* `userdata` - pointer to the userdata data
+
+Interactions with Luau VM from a destructor must be limited as callbacks are called from the garbage-collection stage.
+Our recommendation is to only look up `lua_getthreaddata` for associated host data and postpone any additional cleanup to a later Luau VM resume point.
 
 ```c
 void lua_setuserdatatag(lua_State* L, int idx, int tag);
@@ -1352,17 +1363,6 @@ void lua_setuserdatadtor(lua_State* L, int tag, lua_Destructor dtor);
 
 Sets the destructor function to use when `userdata` with the specified tag is garbage-collected.
 Destructor of the value can be reassigned or set to `nullptr`.
-
-```c
-typedef void (*lua_Destructor)(lua_State* L, void* userdata);
-```
-
-The signature of the destructor callback.
-
-* `userdata` - pointer to the userdata data
-
-Interactions with Luau VM from a destructor must be limited as callbacks are called from the garbage-collection stage.
-Our recommendation is to only look up `lua_getthreaddata` for associated host data and postpone any additional cleanup to a later Luau VM resume point.
 
 ```c
 lua_Destructor lua_getuserdatadtor(lua_State* L, int tag);
@@ -2132,6 +2132,7 @@ Information is filled into `lua_Debug` structure specified by `ar` according to 
 * `a` - arity of the function, number of parameters (`nparams`) and if it is variadic or not (`isvararg`)
 * `n` - name of the function or `nullptr` if not available
 * `f` - the function value itself, placing it on top of the stack
+* `p` - sets `protoid` to the ID of the function prototype, unique per VM, as well as `bytecodeid` to its index within its bytecode module (will be -1 for C functions)
 
 ```c
 int lua_getargument(lua_State* L, int level, int n);
@@ -2274,6 +2275,7 @@ The struct contains:
 * `debugprotectederror` - gets called when an error happens inside a protected call
 * `onallocate` - gets called when memory is allocated with arguments similar to `lua_Alloc`
   * callback is provided with the previous allocation size `osize` (0 for fresh allocations) and new size `nsize`
+* `onfree` - gets called before a heap object or array is freed
 
 `interrupt` callback is allowed to be set from a thread separate from the one running the VM.
 
